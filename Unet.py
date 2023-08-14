@@ -126,6 +126,7 @@ class UnetEdit(nn.Module):
         self.outc = stop_conv(64, numLabels)
         self.flat = torch.nn.Flatten(start_dim=2)
         self.fcl = torch.nn.Linear(600*600,4)
+        self.softmax = torch.nn.Softmax(dim=2)
         #flattening
         #fully connected layer(batch*label*height*width)
 
@@ -143,4 +144,9 @@ class UnetEdit(nn.Module):
         xout = self.outc(xu4)
         xflat = self.flat(xout)
         xfc = self.fcl(xflat)
-        return xfc
+        xsm = self.softmax(xfc)
+        return xsm
+    
+    #Semeantic Segmentation Encoder-Decoder Model
+        #SegNet
+        #DeepLab

@@ -1,11 +1,11 @@
 import torch
 
-def intersection_over_union(pred_coord, target_coord):
+def intersection_over_union(pred_coord, target_coord): #(ytl,xtl,yrb,xrb)
     
     x1 = torch.max(pred_coord[:,1], target_coord[:,1])
     y1 = torch.max(pred_coord[:,0], target_coord[:,0])
-    x2 = torch.max(pred_coord[:,3], target_coord[:,3])
-    y2 = torch.max(pred_coord[:,2], target_coord[:,2])
+    x2 = torch.min(pred_coord[:,3], target_coord[:,3])
+    y2 = torch.min(pred_coord[:,2], target_coord[:,2])
     
     intersection = (x2 - x1).clamp(0) * (y2 - y1).clamp(0)
     
@@ -13,5 +13,14 @@ def intersection_over_union(pred_coord, target_coord):
     box2_area = abs((target_coord[:,3] - target_coord[:,1]) * (target_coord[:,2] - target_coord[:,0]))
     
     iou = intersection / (box1_area + box2_area - intersection + 1e-6)
+    iou[box2_area == 0] = 1-(box1_area[box2_area==0])/(600*600 +1e-6)#둘 다 0이면 1출력
 
-    return torch.min(iou, torch.ones_like(iou))
+    return iou
+
+#BoundingBoxRegression
+#Confidence Score
+#Non-Maximum Suppression
+
+#평가지표
+#Average Precision
+#meanAverge Precision

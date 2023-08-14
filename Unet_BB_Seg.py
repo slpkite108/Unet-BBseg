@@ -1,4 +1,5 @@
 from train import training
+from inference import inference
 from easydict import EasyDict
 import click
 
@@ -14,8 +15,14 @@ import click
 @click.option('--pretrain_path', help='start from pretrained data', metavar='[PATH|URL]', type=str)
 @click.option('--data_path', help='dataset path', metavar='[PATH|URL]', type=str, required=True)
 @click.option('--save_path', help='save path', metavar='[PATH|URL]', type=str, required=True)
+@click.option('--inference', help='Enable inference mode', metavar='BOOL', type=bool, default=False)
 def main(**kwargs):
-    training(arg = EasyDict(kwargs))
+    arg = EasyDict(kwargs)
+
+    if arg.inference:
+        inference(arg)
+    else:
+        training(arg)
 
 if __name__ == "__main__":
     main()

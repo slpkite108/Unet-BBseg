@@ -9,7 +9,9 @@ from Unet import UnetEdit
 from torch.autograd import Variable
 import torch.nn.functional as F
 from loss import intersection_over_union
-from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
+
+
 
 
 def training(arg):
@@ -38,12 +40,16 @@ def training(arg):
 
     #processing
     torch.manual_seed(random_seed)
-    writer = SummaryWriter()
 
+    #tensorboard
+    from torch.utils.tensorboard import SummaryWriter
+    from datetime import datetime
+    import socket
+    writer = SummaryWriter(log_dir=os.path.join(save_path,'run',datetime.now().strftime('%b%d_%H-%M-%S') + '_' + socket.gethostname()))
+
+    #models
     model = UnetEdit(batch,6,600,600).to(device)
-    #model = Unet().to(device)
-    #transform = transforms.Compose([transforms.ToTensor(),])
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e+0)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=4, min_lr=1e-9)
     if use_pt:
         model.load_state_dict(torch.load(pretrain_path))
@@ -90,42 +96,45 @@ def training(arg):
         val_acc = 0.0
 
         # Training
-        for i, data in enumerate(train_loader):
-            #image, truth = data['image'].type(torch.float),data['bbconv']
-            image = data['image'].type(torch.float).to('cuda')
-            truth = data['bbcoord'].type(torch.float).to('cuda')
-            #truth = truth/255
-            predictions = model(image)
-            
-            loss = 1-intersection_over_union(predictions, truth)
-            loss = loss.sum()
-            writer.add_scalar('Loss/train',loss,epoch*len(train_loader))
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
+        with tqdm(train_loader,desc=f"Epoch {epoch+1} - Training", leave=False) as train_pbar:
+            for i, data in enumerate(train_pbar):
+                image, truth = data['image'].type(torch.float).to('cuda'), data['bbcoord'].type(torch.float).to('cuda')
+                #print(truth.shape)
+                predictions = torch.round(model(image)*600)
+
+                loss = 1-intersection_over_union(predictions, truth)
+                loss = loss.mean()
+                writer.add_scalar('Loss/train',loss,i)
+                #print(predictions.shape)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                running_loss += loss.item()
+
         # Validation
         with torch.no_grad():
-            for i, data in enumerate(val_loader):
-                #image, truth = data['image'].type(torch.float),data['bbconv']
-                image = data['image'].type(torch.float).to('cuda')
-                truth = data['bbcoord'].type(torch.float).to('cuda')
-                #truth = truth/255
-                predictions = model(image)
-                predictions = torch.round(predictions) # Rounding the predictions for classification
-                loss = 1-intersection_over_union(predictions, truth)
-                loss = loss.sum()
-                val_loss += loss.item()
-                #val_acc += dice_sim(predictions, truth)*100
+            with tqdm(val_loader, desc=f"Epoch {epoch+1} - Validation", leave=False) as val_pbar:
+                for i, data in enumerate(val_pbar):
+                    image, truth = data['image'].type(torch.float).to('cuda'), data['bbcoord'].type(torch.float).to('cuda')
+
+                    predictions = torch.round(model(image)*600)
+                    
+                    iou = intersection_over_union(predictions, truth)
+                    loss = 1-iou
+                    loss = loss.mean()
+                    writer.add_scalar('Loss/val',loss,i)
+                    val_loss += loss.item()
+                    acc = torch.where(iou>0.5, torch.tensor(1.,device=device),torch.tensor(0.,device=device))
+                    val_acc += acc.mean().item()
 
         epoch_train_loss = running_loss / (train_size//batch+1)
         epoch_val_loss = val_loss / (val_size//batch+1)
         epoch_val_acc = val_acc / (val_size//batch+1)
         scheduler.step(epoch_val_loss) # LR Scheduler
-        print(f"==>train_loss: {epoch_train_loss} ==>val_loss: {epoch_val_loss} ==>val_accuracy: {epoch_val_acc}")
+        print(f"Epoch: {epoch+1} ==>train_loss: {epoch_train_loss} ==>val_loss: {epoch_val_loss} ==>val_accuracy: {epoch_val_acc} ==>LR: {optimizer.param_groups[0]['lr']}")
         
         if epoch % pt_step == 0:
-            checkpoint_path = os.path.join(save_path,'pt',f'model_epoch_{epoch}.pt')
-            torch.save(model.state_dict(), checkpoint_path)
+            if not os.path.exists(os.path.join(save_path,'pt')):
+                os.mkdir(os.path.join(save_path,'pt'))
+            torch.save(model.state_dict(), os.path.join(save_path,'pt',f'model_epoch_{epoch}.pt'))
             print(f"Model saved at epoch {epoch}")
-    
